@@ -49,10 +49,12 @@ class WeixinPubClient
     end
   end
   
+
   def login(username,pwd)
     @cookie=''
     params = {"username"=>username,"pwd"=>Digest::MD5.hexdigest(pwd),"imgcode"=>'',"f"=>'json',"register"=>0} 
     ret = request(:post,'/cgi-bin/login?lang=zh_CN',params,nil)
+    return 'login failed' if !ret.headers["set-cookie"] 
     ret.headers["set-cookie"].split(',').each do |c|
       @cookie << c.split(';')[0] <<";"
     end
@@ -60,7 +62,7 @@ class WeixinPubClient
     puts msg
     @token = msg[msg =~ /token/..-1].split('=')[1]
     ret = request(:get,"/cgi-bin/indexpage?token=#{@token}&t=wxm-index&lang=zh_CN",{"f"=>'json'},nil)
-    puts ret.status
+    return ret.status.to_s
   end
   
   def get_fans
@@ -116,7 +118,7 @@ class WeixinPubClient
   end
   
   def send_message(content,type,reciever)
-    login(@username,@password) if !@cookie
+    return if !@cookie && login(@username,@password) =~ /failed/
     body = {"error"=>false,"ajax"=>1,"f"=>"json","type"=>type,"tofakeid"=>reciever}
     if type == "1"
       body["content"]=content
@@ -126,6 +128,7 @@ class WeixinPubClient
     end
     body["tofakeid"]=reciever if reciever
     ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"http://mp.weixin.qq.com/cgi-bin/singlemsgpage")
+    puts ret.body
   end
   
   def send_post(appmsgid,reciever)
@@ -169,6 +172,7 @@ class WeixinPubClient
     end
     ret
   end
+
 
 end
 end
