@@ -66,7 +66,7 @@ class WeixinPubClient
   end
   
   def get_fans
-    login(@username,@password) if !@cookie
+    return if !@cookie && login(@username,@password) =~ /failed/
     ret = []
     for i in 0..100 do
       res = request(:get,"/cgi-bin/contactmanagepage?t=wxm-friend&lang=zh_CN&pagesize=&pageidx=0&type=0&groupid=0&pageidx=#{i}",{},nil)
@@ -82,7 +82,7 @@ class WeixinPubClient
   end
   
   def get_posts
-    login(@username,@password) if !@cookie
+    return if !@cookie && login(@username,@password) =~ /failed/
     ret = request(:get,"/cgi-bin/operate_appmsg?sub=list&t=wxm-appmsgs-list-new&type=10&pageIdx=0&pagesize=10&subtype=3&f=json",{},nil)
     doc = Nokogiri::HTML(ret.body)
     posts = doc.css('#json-msglist').to_s
@@ -95,7 +95,7 @@ class WeixinPubClient
   end
    
   def get_messages(fakeId,download=false)
-    login(@username,@password) if !@cookie
+    return if !@cookie && login(@username,@password) =~ /failed/
     #doc.force_encoding('gbk')
     #doc.encode!("utf-8", :undef => :replace, :invalid => :replace)
     doc = Nokogiri::HTML(request(:get,"/cgi-bin/singlemsgpage?fromfakeid=#{fakeId}&msgid=&source=&count=20&t=wxm-singlechat&f=json",{},"https://mp.weixin.qq.com/cgi-bin/getmessage").body) 
@@ -117,7 +117,7 @@ class WeixinPubClient
     avatar_download(message.filePath,url)
   end
   
-  def send_message(content,type,reciever)
+  def send_message(reciever,content,type="1")
     return if !@cookie && login(@username,@password) =~ /failed/
     body = {"error"=>false,"ajax"=>1,"f"=>"json","type"=>type,"tofakeid"=>reciever}
     if type == "1"
@@ -126,20 +126,19 @@ class WeixinPubClient
       body["fid"]= content
       body["fileid"]=content
     end
-    body["tofakeid"]=reciever if reciever
     ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"http://mp.weixin.qq.com/cgi-bin/singlemsgpage")
     puts ret.body
   end
   
   def send_post(appmsgid,reciever)
-    login(@username,@password) if !@cookie
+    return if !@cookie && login(@username,@password) =~ /failed/
     body = {"error"=>false,"ajax"=>1,"f"=>"json","tofakeid"=>reciever,"fid"=>appmsgid,"appmsgid"=>appmsgid,"type"=>10}
     ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"http://mp.weixin.qq.com/cgi-bin/singlemsgpage")
   end
 
 
   def avatar_upload(avatar,type="image/png")
-    login(@username,@password) if !@cookie
+    return if !@cookie && login(@username,@password) =~ /failed/
     payload = { :uploadFile => Faraday::UploadIO.new(avatar, type)}
     @conn_multipart.headers["Cookie"] = @cookie
     @conn_multipart.headers["Referer"]="http://mp.weixin.qq.com/cgi-bin/indexpage"
