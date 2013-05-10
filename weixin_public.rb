@@ -3,29 +3,27 @@ require 'faraday'
 require 'json'
 require 'net/http'
 require 'nokogiri'
+require 'openssl'
+
+OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 
 module  WeixinPublicClient
-class AppMsg
+class WeixinObject
+  def initialize(params)
+    params.each{|var,val| self.send "#{var}=", val}
+  end
+end
+
+class AppMsg < WeixinObject
   attr_accessor :appId,:title,:time
-  def initialize(appId,title,time)
-    @appId=appId
-    @title=title
-    @time=time
-  end
 end
 
-class WeixinFan
+class WeixinFan < WeixinObject
   attr_accessor :fakeId,:nickName,:remarkName,:groupId
-  def initialize(params)
-    params.each{|var,val| self.send "#{var}=", val}
-  end
 end
 
-class WeixinMessage
+class WeixinMessage < WeixinObject
   attr_accessor :fileId,:source,:fakeId,:hasReply,:nickName,:remarkName,:dateTime,:id,:type,:content
-  def initialize(params)
-    params.each{|var,val| self.send "#{var}=", val}
-  end
 
   def filePath
     file_type = {"2"=>"jpg","3"=>"mp3","4"=>"mp4"}[@type]
@@ -39,11 +37,13 @@ end
 
   
 class WeixinPubClient
-  def initialize(username,password)
+  def initialize(username,password,sig=nil,cert=nil)
     @username=username
     @password=password
-    @conn = Faraday.new(:url => 'http://mp.weixin.qq.com')
-    @conn_multipart = Faraday.new(:url => 'http://mp.weixin.qq.com') do |faraday|
+    @sig = sig
+    @cert = cert
+    @conn = Faraday.new(:url => 'https://mp.weixin.qq.com')
+    @conn_multipart = Faraday.new(:url => 'https://mp.weixin.qq.com') do |faraday|
       faraday.request :multipart
       faraday.adapter :net_http      
     end
@@ -51,15 +51,15 @@ class WeixinPubClient
   
 
   def login(username,pwd)
-    @cookie=''
-    params = {"username"=>username,"pwd"=>Digest::MD5.hexdigest(pwd),"imgcode"=>'',"f"=>'json',"register"=>0} 
+    pwd = Digest::MD5.hexdigest(pwd)
+    @cookie = @sig?"sig=#{@sig};cert=#{@cert}":""
+    params = {"username"=>username,"pwd"=>pwd,"imgcode"=>'',"f"=>'json'} 
     ret = request(:post,'/cgi-bin/login?lang=zh_CN',params,nil)
     return 'login failed' if !ret.headers["set-cookie"] 
     ret.headers["set-cookie"].split(',').each do |c|
       @cookie << c.split(';')[0] <<";"
     end
     msg = JSON.parse(ret.body)["ErrMsg"]
-    puts msg
     @token = msg[msg =~ /token/..-1].split('=')[1]
     ret = request(:get,"/cgi-bin/indexpage?token=#{@token}&t=wxm-index&lang=zh_CN",{"f"=>'json'},nil)
     return ret.status.to_s
@@ -117,7 +117,7 @@ class WeixinPubClient
     avatar_download(message.filePath,url)
   end
   
-  def send_message(reciever,content,type="1")
+  def send_message(content,reciever,type="1")
     return if !@cookie && login(@username,@password) =~ /failed/
     body = {"error"=>false,"ajax"=>1,"f"=>"json","type"=>type,"tofakeid"=>reciever}
     if type == "1"
@@ -126,14 +126,14 @@ class WeixinPubClient
       body["fid"]= content
       body["fileid"]=content
     end
-    ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"http://mp.weixin.qq.com/cgi-bin/singlemsgpage")
+    ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"https://mp.weixin.qq.com/cgi-bin/singlemsgpage")
     puts ret.body
   end
   
   def send_post(appmsgid,reciever)
     return if !@cookie && login(@username,@password) =~ /failed/
     body = {"error"=>false,"ajax"=>1,"f"=>"json","tofakeid"=>reciever,"fid"=>appmsgid,"appmsgid"=>appmsgid,"type"=>10}
-    ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"http://mp.weixin.qq.com/cgi-bin/singlemsgpage")
+    ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"https://mp.weixin.qq.com/cgi-bin/singlemsgpage")
   end
 
 
@@ -161,6 +161,8 @@ class WeixinPubClient
         req.url url
         req.body = params
         req.body['token']=@token
+        puts @conn.headers
+        puts req.body
       end
     else
       ret = @conn.get do |req|
