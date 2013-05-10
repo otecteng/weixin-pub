@@ -10,7 +10,7 @@ OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 module  WeixinPublicClient
 class WeixinObject
   def initialize(params)
-    params.each{|var,val| self.send "#{var}=", val}
+  	params.each{|var,val| self.send "#{var}=", val if self.class.instance_methods.include?(var)}
   end
 end
 
@@ -72,11 +72,8 @@ class WeixinPubClient
       res = request(:get,"/cgi-bin/contactmanagepage?t=wxm-friend&lang=zh_CN&pagesize=&pageidx=0&type=0&groupid=0&pageidx=#{i}",{},nil)
       doc = Nokogiri::HTML(res.body)
       fans = JSON.parse(doc.css('#json-friendList').to_s[/\[.*?\]/m])
-      puts "fans.length=#{fans.length}"
       break if fans.length == 0
-      fans.each do |u|
-        ret<< WeixinFan.new(:fakeId=>u["fakeId"],:nickName=>u["nickName"],:remarkName=>u["remarkName"],:groupId=>["groupId"])
-      end
+      fans.each { |f| ret<< WeixinFan.new(f) }
     end
     ret
   end
@@ -88,9 +85,7 @@ class WeixinPubClient
     posts = doc.css('#json-msglist').to_s
     posts = JSON.parse(posts[posts.index(/{/)..posts.rindex(/}/)])["list"]
     ret = []
-    posts.each do |po|
-      ret << AppMsg.new(po["appId"],po["title"],po["time"])
-    end
+    posts.each {|po| ret << AppMsg.new(po)}
     ret
   end
    
@@ -104,7 +99,10 @@ class WeixinPubClient
     ret = []
     messages.each do |m| 
       next if m["type"]=="10" || m["fakeId"]!=fakeId
-      ret << WeixinMessage.new(:dateTime=>Time.at(m["dateTime"].to_i),:id=>m["id"],:type=>m["type"],:content=>m["content"],:fileId=>m["fileId"]) if m["type"]!="10"
+      if m["type"]!="10" then
+      	ret << WeixinMessage.new(m)
+      	ret[-1].dateTime = Time.at(m["dateTime"].to_i)
+      end
       if download then
         download_file(ret[-1])
       end
@@ -161,8 +159,6 @@ class WeixinPubClient
         req.url url
         req.body = params
         req.body['token']=@token
-        puts @conn.headers
-        puts req.body
       end
     else
       ret = @conn.get do |req|
@@ -173,7 +169,6 @@ class WeixinPubClient
     end
     ret
   end
-
 
 end
 end
