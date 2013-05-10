@@ -10,7 +10,7 @@ OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
 module  WeixinPublicClient
 class WeixinObject
   def initialize(params)
-  	params.each{|var,val| self.send "#{var}=", val if self.class.instance_methods.include?(var)}
+  	params.each { |var,val| self.send "#{var}=", val if self.class.instance_methods.include?(var.to_sym)}
   end
 end
 
