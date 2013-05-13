@@ -1,13 +1,13 @@
+require "weixin_public/version"
 require 'digest'
-require 'faraday'
 require 'json'
+require 'openssl'
 require 'net/http'
 require 'nokogiri'
-require 'openssl'
+require 'faraday'
 
-OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
+module WeixinPublic
 
-module  WeixinPublicClient
 class WeixinObject
   def initialize(params)
   	params.each { |var,val| self.send "#{var}=", val if self.class.instance_methods.include?(var.to_sym)}
@@ -52,6 +52,7 @@ class WeixinPubClient
 
   def login(username,pwd)
     pwd = Digest::MD5.hexdigest(pwd)
+
     @cookie = @sig?"sig=#{@sig};cert=#{@cert}":""
     params = {"username"=>username,"pwd"=>pwd,"imgcode"=>'',"f"=>'json'} 
     ret = request(:post,'/cgi-bin/login?lang=zh_CN',params,nil)
@@ -171,4 +172,5 @@ class WeixinPubClient
   end
 
 end
+
 end
