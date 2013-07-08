@@ -10,7 +10,7 @@ module WeixinPublic
 
 class WeixinObject
   def initialize(params)
-  	params.each { |var,val| self.send "#{var}=", val if self.class.instance_methods.include?(var.to_sym)}
+    params.each { |var,val| self.send "#{var}=", val if self.class.instance_methods.include?(var.to_sym)}
   end
 end
 
@@ -51,9 +51,10 @@ class WeixinPubClient
   
 
   def login(username,pwd)
+    puts "login with#{username}-#{pwd}"
     pwd = Digest::MD5.hexdigest(pwd)
 
-    @cookie = @sig?"sig=#{@sig};cert=#{@cert}":""
+    @cookie = @cert?"cert=#{@cert}":""
     params = {"username"=>username,"pwd"=>pwd,"imgcode"=>'',"f"=>'json'} 
     ret = request(:post,'/cgi-bin/login?lang=zh_CN',params,nil)
     return 'login failed' if !ret.headers["set-cookie"] 
@@ -78,17 +79,6 @@ class WeixinPubClient
     end
     ret
   end
-  
-  def get_posts
-    return if !@cookie && login(@username,@password) =~ /failed/
-    ret = request(:get,"/cgi-bin/operate_appmsg?sub=list&t=wxm-appmsgs-list-new&type=10&pageIdx=0&pagesize=10&subtype=3&f=json",{},nil)
-    doc = Nokogiri::HTML(ret.body)
-    posts = doc.css('#json-msglist').to_s
-    posts = JSON.parse(posts[posts.index(/{/)..posts.rindex(/}/)])["list"]
-    ret = []
-    posts.each {|po| ret << AppMsg.new(po)}
-    ret
-  end
    
   def get_messages(fakeId,download=false)
     return if !@cookie && login(@username,@password) =~ /failed/
@@ -101,12 +91,39 @@ class WeixinPubClient
     messages.each do |m| 
       next if m["type"]=="10" || m["fakeId"]!=fakeId
       if m["type"]!="10" then
-      	ret << WeixinMessage.new(m)
-      	ret[-1].dateTime = Time.at(m["dateTime"].to_i)
+        ret << WeixinMessage.new(m)
+        ret[-1].dateTime = Time.at(m["dateTime"].to_i)
       end
       if download then
         download_file(ret[-1])
       end
+    end
+    ret
+  end
+  
+  def get_messages_number_new(lastmsgid)
+    return if !@cookie && login(@username,@password) =~ /failed/
+    res = request(:post,"/cgi-bin/getnewmsgnum?t=ajax-getmsgnum&lastmsgid=#{lastmsgid}")
+    ret = JSON.parse(res.body)["newTotalMsgCount"]
+  end
+
+  def get_messages_today(lastmsgid=0,step=50)
+    return if !@cookie && login(@username,@password) =~ /failed/
+    offset = 0
+    ret = []
+    loop do
+      params = {"t"=>"ajax-message","lang"=>"zh_CN","count"=>'50',"timeline"=>'1','day'=>'0','cgi'=>'getmessage','offset'=>offset} 
+      res = request(:post,"/cgi-bin/getmessage",params,nil)
+      messages = JSON.parse(res.body)
+      n = 0
+      messages.each do |m| 
+        break if m["id"].to_i <= lastmsgid
+        ret << WeixinMessage.new(m)
+          ret[-1].dateTime = Time.at(m["dateTime"].to_i)
+          n = n+1
+      end
+      break if n < step
+      offset = offset + step
     end
     ret
   end
@@ -126,10 +143,9 @@ class WeixinPubClient
       body["fileid"]=content
     end
     ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"https://mp.weixin.qq.com/cgi-bin/singlemsgpage")
-    puts ret.body
   end
   
-  def send_post(appmsgid,reciever)
+  def send_appmsg(appmsgid,reciever)
     return if !@cookie && login(@username,@password) =~ /failed/
     body = {"error"=>false,"ajax"=>1,"f"=>"json","tofakeid"=>reciever,"fid"=>appmsgid,"appmsgid"=>appmsgid,"type"=>10}
     ret = request(:post,"/cgi-bin/singlesend?t=ajax-response&lang=zh_CN",body,"https://mp.weixin.qq.com/cgi-bin/singlemsgpage")
@@ -137,7 +153,7 @@ class WeixinPubClient
 
 
   def avatar_upload(avatar,type="image/png")
-    return if !@cookie && login(@username,@password) =~ /failed/
+    return nil if !@cookie && login(@username,@password) =~ /failed/
     payload = { :uploadFile => Faraday::UploadIO.new(avatar, type)}
     @conn_multipart.headers["Cookie"] = @cookie
     @conn_multipart.headers["Referer"]="http://mp.weixin.qq.com/cgi-bin/indexpage"
@@ -145,11 +161,53 @@ class WeixinPubClient
     return ret.body.to_s[/\'.*?\'/m][1..-2] if ret.body =~ /suc/m
     return nil
   end
-  
+
+  def create_appmsg(title,avatar,content,desc="")
+    return nil if !@cookie && login(@username,@password) =~ /failed/
+    if avatar =~ /^http/ then
+    end
+    fileid = avatar_upload(avatar)
+    return nil if !fileid
+    params = {:error=>false,:count=>1,:title0=>title,:digest0=>desc,:content0=>content,:fileid0=>fileid,:ajax=>1,:sub=>"create"} 
+    ret = request(:post,"/cgi-bin/operate_appmsg?t=ajax-response&lang=zh_CN",params,"https://mp.weixin.qq.com/cgi-bin/operate_appmsg")
+    print ret.body
+    lst=get_appmsg_lst
+    return lst[0].appId if lst
+    return nil
+  end
+
+  def get_appmsg_lst
+    return nil if !@cookie && login(@username,@password) =~ /failed/
+    ret = request(:get,"/cgi-bin/operate_appmsg?sub=list&t=wxm-appmsgs-list-new&type=10&pageIdx=0&pagesize=10&subtype=3&f=json",{},nil)
+    doc = Nokogiri::HTML(ret.body)
+    posts = doc.css('#json-msglist').to_s
+    posts = JSON.parse(posts[posts.index(/{/)..posts.rindex(/}/)])["list"]
+    ret = []
+    posts.each {|po| ret << AppMsg.new(po)}
+    ret
+  end
+
   def avatar_download(file,url)
     puts "download-#{url}"
     ret = request(:get,url,{},nil)
     File.open(file, 'wb') { |fp| fp.write(ret.body) }
+  end
+
+  #type:1 -edit mode 2 -dev mode  4 -auto-reply
+  def operadvancedfunc(type=1,on_off = 0)
+    return nil if !@cookie && login(@username,@password) =~ /failed/
+    ret = request(:post,"/cgi-bin/operadvancedfunc?op=switch&lang=zh_CN",{:flag=>on_off,:type=>type,:ajax=>1},nil)
+  end
+
+  def switch_dev_mode
+    operadvancedfunc(4,0)
+    operadvancedfunc(1,0)
+    operadvancedfunc(2,1)
+  end
+
+  def set_dev_callback(url, token)
+    return nil if !@cookie && login(@username,@password) =~ /failed/
+    ret = request(:post,"/cgi-bin/callbackprofile?t=ajax-response&lang=zh_CN",{:url=>url,:callback_token=>token,:ajax=>1},nil)
   end
 
   def request(method,url,params,referer)
