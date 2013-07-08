@@ -37,7 +37,7 @@ end
 
   
 class WeixinPubClient
-  def initialize(username,password,sig=nil,cert=nil)
+  def initialize(username,password,cert=nil,sig=nil)
     @username=username
     @password=password
     @sig = sig
@@ -53,10 +53,10 @@ class WeixinPubClient
   def login(username,pwd)
     puts "login with#{username}-#{pwd}"
     pwd = Digest::MD5.hexdigest(pwd)
-
     @cookie = @cert?"cert=#{@cert}":""
+    @cookie = "#{@cookie};sig=#{@sig}"if @sig
     params = {"username"=>username,"pwd"=>pwd,"imgcode"=>'',"f"=>'json'} 
-    ret = request(:post,'/cgi-bin/login?lang=zh_CN',params,nil)
+    ret = request(:post,'/cgi-bin/login?lang=zh_CN',params,"https://mp.weixin.qq.com/cgi-bin/loginpage?t=wxm2-login&lang=zh_CN")
     return 'login failed' if !ret.headers["set-cookie"] 
     ret.headers["set-cookie"].split(',').each do |c|
       @cookie << c.split(';')[0] <<";"
@@ -217,7 +217,8 @@ class WeixinPubClient
       ret = @conn.post do |req|
         req.url url
         req.body = params
-        req.body['token']=@token
+        req.body['token']=@token if @token
+        p req.headers["Content-Length"]
       end
     else
       ret = @conn.get do |req|
