@@ -19,11 +19,16 @@ class AppMsg < WeixinObject
 end
 
 class WeixinFan < WeixinObject
-  attr_accessor :fakeId,:nickName,:remarkName,:groupId
+  attr_accessor :id,:nick_name,:remark_name,:group_id
 end
-
+class WeixinGroup < WeixinObject
+  attr_accessor :id,:name,:remark_name,:cnt
+end
+class WeixinPubUser < WeixinObject
+  attr_accessor :username,:signature,:country,:province,:city,:verifyInfo,:bindUserName,:account
+end
 class WeixinMessage < WeixinObject
-  attr_accessor :fileId,:source,:fakeId,:hasReply,:nickName,:remarkName,:dateTime,:id,:type,:content
+  attr_accessor :fileId,:source,:fakeid,:has_reply,:nick_name,:remarkName,:date_time,:id,:type,:content
 
   def filePath
     file_type = {"2"=>"jpg","3"=>"mp3","4"=>"mp4"}[@type]
@@ -37,7 +42,9 @@ end
 
   
 class WeixinPubClient
-  def initialize(username,password,cert=nil,sig=nil)
+
+
+  def initialize(username,password,sig=nil,cert=nil)
     @username=username
     @password=password
     @sig = sig
@@ -51,12 +58,13 @@ class WeixinPubClient
   
 
   def login(username,pwd)
-    puts "login with#{username}-#{pwd}"
-    pwd = Digest::MD5.hexdigest(pwd)
+    @username = username if username
+    @password = password if password
+    pwd = Digest::MD5.hexdigest(@password)
     @cookie = @cert?"cert=#{@cert}":""
-    @cookie = "#{@cookie};sig=#{@sig}"if @sig
-    params = {"username"=>username,"pwd"=>pwd,"imgcode"=>'',"f"=>'json'} 
-    ret = request(:post,'/cgi-bin/login?lang=zh_CN',params,"https://mp.weixin.qq.com/cgi-bin/loginpage?t=wxm2-login&lang=zh_CN")
+    @cookie = "#{@cookie};sig=#{@sig}" if@sig
+    params = {"username"=>@username,"pwd"=>pwd,"imgcode"=>'',"f"=>'json'} 
+    ret = request(:post,'/cgi-bin/login?lang=zh_CN',params,"https://mp.weixin.qq.com/cgi-bin/loginpage")
     return 'login failed' if !ret.headers["set-cookie"] 
     ret.headers["set-cookie"].split(',').each do |c|
       @cookie << c.split(';')[0] <<";"
@@ -64,6 +72,10 @@ class WeixinPubClient
     msg = JSON.parse(ret.body)["ErrMsg"]
     @token = msg[msg =~ /token/..-1].split('=')[1]
     ret = request(:get,"/cgi-bin/indexpage?token=#{@token}&t=wxm-index&lang=zh_CN",{"f"=>'json'},nil)
+    if ret.status == 200
+      fakeid = ret.body[(ret.body =~ /FakeID   : /)+12,32]
+      @fakeid = fakeid[0..(fakeid =~ /\"/)].to_i
+    end
     return ret.status.to_s
   end
   
@@ -71,19 +83,24 @@ class WeixinPubClient
     return if !@cookie && login(@username,@password) =~ /failed/
     ret = []
     for i in 0..100 do
-      res = request(:get,"/cgi-bin/contactmanagepage?t=wxm-friend&lang=zh_CN&pagesize=&pageidx=0&type=0&groupid=0&pageidx=#{i}",{},nil)
-      doc = Nokogiri::HTML(res.body)
-      fans = JSON.parse(doc.css('#json-friendList').to_s[/\[.*?\]/m])
-      break if fans.length == 0
-      fans.each { |f| ret<< WeixinFan.new(f) }
+      res = request(:get,
+        "/cgi-bin/contactmanage?t=user/index&pagesize=10&pageidx=#{i}&type=0&groupid=0&lang=zh_CN",{},
+        'https://mp.weixin.qq.com/cgi-bin/contactmanage')
+      begin
+        data = JSON.parse(Nokogiri::HTML(res.body))
+        fans = JSON.parse(data["contact_list"])["contacts"].map { |f| WeixinFan.new(f) }
+        break if fans.length == 0
+        ret.concat(fans)        
+      rescue Exception => e
+        p "Exception"
+        break
+      end
     end
     ret
   end
    
   def get_messages(fakeId,download=false)
     return if !@cookie && login(@username,@password) =~ /failed/
-    #doc.force_encoding('gbk')
-    #doc.encode!("utf-8", :undef => :replace, :invalid => :replace)
     doc = Nokogiri::HTML(request(:get,"/cgi-bin/singlemsgpage?fromfakeid=#{fakeId}&msgid=&source=&count=20&t=wxm-singlechat&f=json",{},"https://mp.weixin.qq.com/cgi-bin/getmessage").body) 
     messages = doc.css('#json-msgList').to_s.encode("UTF-8", "UTF-8",:invalid => :replace)
     messages = JSON.parse(messages[messages.index(/\[/)..messages.rindex(/\]/)])
@@ -135,6 +152,7 @@ class WeixinPubClient
   
   def send_message(content,reciever,type="1")
     return if !@cookie && login(@username,@password) =~ /failed/
+    return if !content or content.length == 0
     body = {"error"=>false,"ajax"=>1,"f"=>"json","type"=>type,"tofakeid"=>reciever}
     if type == "1"
       body["content"]=content
@@ -162,20 +180,22 @@ class WeixinPubClient
     return nil
   end
 
-  def create_appmsg(title,avatar,content,desc="")
+  def create_appmsg(title,avatar,content,source="",digest="")
     return nil if !@cookie && login(@username,@password) =~ /failed/
     if avatar =~ /^http/ then
     end
     fileid = avatar_upload(avatar)
     return nil if !fileid
-    params = {:error=>false,:count=>1,:title0=>title,:digest0=>desc,:content0=>content,:fileid0=>fileid,:ajax=>1,:sub=>"create"} 
+    params = {:error=>false,:count=>1,:title0=>title,:digest0=>digest,
+          :content0=>content,:fileid0=>fileid,:sourceurl0=>source,
+          :ajax=>1,:sub=>"create"} 
     ret = request(:post,"/cgi-bin/operate_appmsg?t=ajax-response&lang=zh_CN",params,"https://mp.weixin.qq.com/cgi-bin/operate_appmsg")
     print ret.body
     lst=get_appmsg_lst
     return lst[0].appId if lst
     return nil
   end
-
+  
   def get_appmsg_lst
     return nil if !@cookie && login(@username,@password) =~ /failed/
     ret = request(:get,"/cgi-bin/operate_appmsg?sub=list&t=wxm-appmsgs-list-new&type=10&pageIdx=0&pagesize=10&subtype=3&f=json",{},nil)
@@ -218,7 +238,6 @@ class WeixinPubClient
         req.url url
         req.body = params
         req.body['token']=@token if @token
-        p req.headers["Content-Length"]
       end
     else
       ret = @conn.get do |req|
