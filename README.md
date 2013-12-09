@@ -1,39 +1,13 @@
 # Weixin公众账号接口
 
-根据Weixin公众账号Web管理控制台协议工作，本接口实现仅供参考。
+本接口实现仅供参考。
 
 
 2013-4-30:首次发布  
-2013-5-10:接口修改为HTTPS模式工作，对于无法登录的情况增加sig和cert参数辅助登录冲，部分代码重构  
-```ruby
-说明：一般情况下，如果登录时返回400,Error-6的错误的错误，请在登录时增加sig和cert参数，可以通过网页登录后在cookie里获取这两个参数的值填到参数里。没有sig参数的web page登录会弹出验证码,有时没这两个参数,或者没有sig时也能成功。
-```
+2013-5-10:接口修改为HTTPS模式工作，对于无法登录的情况增加sig和cert参数辅助登录冲，部分代码重构 
+2013-12-09:修正8月份微信平台升级后的部分api地址修改的错误，补充官方API实现，测试修改为rspec实现
+ 
 
-## Demo
-```ruby
-require 'weixin_public.rb'
-client = WeixinPublicClient::WeixinPubClient.new('x@gmail.com','123')
-```
-
-群发文本消息：
-```ruby
-client.get_fans.each do |fan|
-  client.send_message("hello",fan.fakeId)
-end
-```
-
-获取指定用户的对话信息：
-```ruby
-fakeId = '1234'
-msgs = client.get_messages(fakeId)
-msgs.each {|m| p "#{m.dateTime} << #{m.content}"} 
-```
-
-图片，音频：
-```ruby
-fileId = client.avatar_upload('pix.jpg')
-client.send_message(fileId,fan.fakeId)
-```
 ## Usage
 
 

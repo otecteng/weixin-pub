@@ -2,7 +2,7 @@
 require "wx_api"
 describe WeixinPublic::WeixinAPIClient do
   subject {
-    client = WeixinPublic::WeixinAPIClient.new("wxea2ce7f47689a346","3a5c43e567e95d022b50d9e09dc81577") 
+    client = WeixinPublic::WeixinAPIClient.new("wx.....","3a5c........") 
   }
 
   it "get info" do

@@ -2,7 +2,7 @@ require "wx_https"
 
 describe WeixinPublic::WeixinPubClient do
   subject {
-    client = WeixinPublic::WeixinPubClient.new("wei_xiaoer@163.com","xiaoer163") 
+    client = WeixinPublic::WeixinPubClient.new("abc@163.com","abc") 
     client.login
     client
   }
